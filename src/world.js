@@ -16,7 +16,7 @@ const tunT = (z) => clamp((z - TUN_Z0) / (TUN_Z1 - TUN_Z0), 0, 1);
 const tunCx = (z) => { const t = tunT(z); return 1.6 * sin(t * PI * 1.4) * (1 - ss(0.65, 1, t)); };
 const tunFloor = (z) => mix(0.75, 0.05, ss(-50, -27, z));
 // open start: through the tunnel, over the stones, round the shrine, east cove, mother tree, up the root bridge
-const TOUR = [POSES[0], [1.5, 2.15, -40, 0.6, 2.4, -20], POSES[1], [-0.8, 1.75, -24.6, 0.4, 2.8, 0], POSES[2], [5.4, 1.75, -3, 0.8, 2.6, 1.5], [5.6, 1.8, 3.2, 0.8, 2.6, 1.5], POSES[4], POSES[3], [-10.2, 6.6, 28, -17.5, 7.5, 21], POSES[5]];
+const TOUR = [POSES[0], [1.5, 2.15, -40, 0.6, 2.4, -20], POSES[1], [-0.8, 1.75, -24.6, 0.4, 2.8, 0], POSES[2], [7.4, 2, -4.4, 0.8, 2.6, 1.5], [8, 2.1, 4.6, 0.8, 2.6, 1.5], POSES[4], POSES[3], [-10.2, 8.4, 28, -17.5, 8.6, 21], POSES[5]];
 // open sightlines the surrounding forest is grown around
 const SIGHTLINES = [[0, 1.65, -28, 0, 4.2, 0], [0.8, 2.05, 23.4, 0.8, 2.7, 1.5], [-3.2, 1.65, -8.5, 0.8, 2.6, 1.5], [0, 2.1, 24.4, 0, 5.2, 43], [25, 2.6, 10, 10, 2.5, -4], [-17.5, 8.2, 20.5, 3, 2.2, -6], [-24, 2, -11, -17, 4.2, 16]];
 const SUN_DIR = norm3([-0.34, 0.74, 0.58]);

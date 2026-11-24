@@ -24,6 +24,8 @@ window.__MG = {
     }
     return runs.slice(0, 30);
   },
+  // freezes the tour at a fraction of its length (for checking frames along the route)
+  setTour(t) { tourActive = true; tourT = t; tourRate = 0; lookOff.yaw = lookOff.pitch = 0; canvas.style.opacity = ''; gpuSamples.length = 0; },
   setSkip(o) { skip = o || {}; gpuSamples.length = 0; },
   setMode(mode) { setMoveMode(mode === 'fly'); return flyMode ? 'fly' : 'walk'; },
   setTime(t) { fixedTime = t; },

@@ -13,9 +13,6 @@ body {
   font: 700 clamp(13px, .7vw + .9vh, 36px)/1.4 system-ui, sans-serif; color: #eefaf8;
   -webkit-user-select: none; user-select: none;
 }
-@media (orientation: portrait) and (pointer: coarse) {
-  body { width: 100dvh; height: 100dvw; transform-origin: 0 0; transform: rotate(90deg) translateY(-100%); }
-}
 canvas {
   position: absolute; width: 100%; height: 100%; touch-action: none; cursor: crosshair;
   transition: filter 1s, transform 1s, opacity 1.5s;
@@ -29,12 +26,12 @@ body:not(.g) canvas { filter: blur(1vmax) brightness(.55); transform: scale(1.05
 }
 .g #m, .m #l, .l #g { opacity: 0; visibility: hidden; }
 h1 {
-  margin: 0; font: 900 4.2em/1 system-ui, sans-serif; letter-spacing: .06em; text-transform: uppercase;
+  margin: 0; font: 900 min(4.2em, 12.5vw)/1 system-ui, sans-serif; letter-spacing: .06em; text-transform: uppercase;
   color: #0000; background: linear-gradient(#fff6e5 18%, #f7ca7e 56%, #7be3d8);
   -webkit-background-clip: text; background-clip: text; filter: drop-shadow(0 .06em .22em #000c);
 }
 p { margin: 0; }
-#a { display: grid; width: 32em; max-width: 100%; }
+#a { display: grid; width: min(32em, 88vw); }
 #a > * { grid-area: 1/1; transition: opacity .7s, visibility .7s; }
 #s, #w, #q, #k, #h { font-size: .78em; letter-spacing: .11em; text-transform: uppercase; }
 #w { margin-top: 1.1em; color: #8cf2e4; text-wrap: balance; }
@@ -78,7 +75,7 @@ button:active { transform: translateY(.08em); filter: brightness(.92); }
 }
 #h { display: none; }
 @media (pointer: coarse), (max-height: 30em) { #k { display: none; } }
-@media (pointer: coarse) { #h { display: block; } }
+@media (pointer: coarse) { #h { display: block; } #q .x { display: none; } #m { padding-bottom: 6em; } }
 #o {
   position: absolute; top: .6em; right: .6em; display: none; padding: .3em .6em; background: #061d24d9;
   box-shadow: inset 0 0 0 2px #7be3d8, 0 .3em 1em #0008; font-size: 1.25em; color: #eefaf8; opacity: .82;
@@ -99,7 +96,7 @@ button:active { transform: translateY(.08em); filter: brightness(.92); }
     <div id=l><div id=p><i id=b></i></div><p id=s>Awakening the forest…</p><p id=w hidden>Use Google Chrome or Edge for WebGPU</p></div>
     <div id=g>
       <button id=d>Enter the Grove</button>
-      <p id=q><span>Detail</span><button>Low</button><button>Medium</button><button>High</button><span style="flex:.8">Mode</span><button id=mw class=on>Walk</button><button id=mf>Fly</button></p>
+      <p id=q><span>Detail</span><button>Low</button><button>Medium</button><button>High</button><span class=x style="flex:.8">Mode</span><button id=mw class="on x">Walk</button><button id=mf class=x>Fly</button></p>
       <div id=k>
         <p>
           <i><b>W</b><b>A</b><b>S</b><b>D</b></i>Move
@@ -116,7 +113,7 @@ button:active { transform: translateY(.08em); filter: brightness(.92); }
           <i><b>H</b></i>Stats
         </p>
       </div>
-      <p id=h>Hold to walk forward · slide to look · second finger to move faster</p>
+      <p id=h>The grove guides you through · drag to look around</p>
     </div>
   </div>
 </div>

@@ -6,9 +6,12 @@ const canvas = $('c'), info = $('i');
 const HDR = 'rgba16float', DEPTH = 'depth32float', BLOOM_LEVELS = 6;
 const cam = { x: POSES[0][0], y: POSES[0][1], z: POSES[0][2], yaw: 0, pitch: 0, vy: 0 };
 const input = { f: 0, b: 0, l: 0, r: 0, u: 0, d: 0, run: 0 };
-let flyMode = false, tourActive = false, tourT = 0, hud = false, playing = false, poseHold = true, grounded = true;
+let touching = false, flyMode = false, tourActive = false, tourT = 0, hud = false, playing = false, poseHold = true, grounded = true;
 let fixedTime = null, sceneTime = 0, frameCounter = 0, gpuMs = 0, cpuFps = 60, W = 0, H_ = 0, adapterDesc = {}, world = null, hasTS = false;
 let onGpuSample = null, skip = {};
+// the tour is one slow pass (longer on phones); touch-look adds an offset that eases back to the tour's own framing
+let tourRate = 1 / (mob ? 100 : 60);
+const lookOff = { yaw: 0, pitch: 0 };
 
 function lookAtPose(p) {
   cam.x = p[0]; cam.y = p[1]; cam.z = p[2];
@@ -32,10 +35,15 @@ const tourPts = (() => {
 
 function stepCamera(dt) {
   if (tourActive) {
-    tourT = (tourT + dt / 60) % 1;
+    tourT = (tourT + dt * tourRate) % 1;
     const f = tourT * tourPts.length, i = floor(f), u = f - i, a = tourPts[i], b = tourPts[min(i + 1, tourPts.length - 1)], q = a.map((v, k) => mix(v, b[k], u));
     const ground = world.walkH(q[0], q[2], q[1] - 1.65) + 1.25;
     lookAtPose([q[0], max(q[1], ground), q[2], q[3], q[4], q[5]]);
+    if (!touching) { const k = exp(-dt * 0.9); lookOff.yaw *= k; lookOff.pitch *= k; }
+    cam.yaw += lookOff.yaw; cam.pitch = clamp(cam.pitch + lookOff.pitch, -1.45, 1.45);
+    // the route is open, so it dips to black around the jump from the overlook back into the tunnel
+    const o = tourT > 0.975 || tourT < 0.004 ? '0' : '1';
+    if (canvas.style.opacity !== o) canvas.style.opacity = o;
     return;
   }
   const mx = input.r - input.l, mz = input.f - input.b;
@@ -77,9 +85,9 @@ function bindInput(openMenu) {
     else if (c === 'KeyQ' || c === 'KeyC') input.d = v;
     else if (c === 'ShiftLeft' || c === 'ShiftRight') input.run = v;
     if (!v || e.repeat) return;
-    if (c >= 'Digit1' && c <= 'Digit6') { tourActive = false; lookAtPose(POSES[+c[5] - 1]); }
+    if (c >= 'Digit1' && c <= 'Digit6') { tourActive = false; canvas.style.opacity = ''; lookAtPose(POSES[+c[5] - 1]); }
     else if (c === 'KeyG') setMoveMode(!flyMode);
-    else if (c === 'KeyF') tourActive = !tourActive;
+    else if (c === 'KeyF') { tourActive = !tourActive; if (!tourActive) canvas.style.opacity = ''; }
     else if (c === 'KeyM') mute();
     else if (c === 'KeyH') { hud = !hud; if (!hud) info.textContent = ''; }
     else if (c === 'Escape') openMenu();
@@ -92,12 +100,15 @@ function bindInput(openMenu) {
   document.addEventListener('pointerlockchange', () => { if (!document.pointerLockElement && playing && !mob) openMenu(); });
   canvas.addEventListener('click', () => { if (playing && !mob) canvas.requestPointerLock?.(); });
   const touches = new Map();
-  canvas.addEventListener('pointerdown', (e) => { if (e.pointerType === 'touch') { touches.set(e.pointerId, [e.clientX, e.clientY]); input.f = 1; input.run = touches.size > 1 ? 1 : 0; } });
+  canvas.addEventListener('pointerdown', (e) => { if (e.pointerType === 'touch') { touches.set(e.pointerId, [e.clientX, e.clientY]); touching = true; } });
   canvas.addEventListener('pointermove', (e) => {
     const t = touches.get(e.pointerId);
-    if (t) { look(e.clientX - t[0], e.clientY - t[1], 0.004); t[0] = e.clientX; t[1] = e.clientY; }
+    if (t) {
+      const dx = e.clientX - t[0], dy = e.clientY - t[1]; t[0] = e.clientX; t[1] = e.clientY;
+      if (tourActive) { lookOff.yaw += dx * 0.005; lookOff.pitch = clamp(lookOff.pitch - dy * 0.005, -1, 1); } else look(dx, dy, 0.004);
+    }
   });
-  const up = (e) => { if (touches.delete(e.pointerId)) { input.f = touches.size ? 1 : 0; input.run = touches.size > 1 ? 1 : 0; } };
+  const up = (e) => { if (touches.delete(e.pointerId)) touching = touches.size > 0; };
   canvas.addEventListener('pointerup', up); canvas.addEventListener('pointercancel', up);
 }
 
@@ -302,7 +313,7 @@ async function boot() {
     if (playing || tourActive) stepCamera(dt);
     resize();
     const cp = cos(cam.pitch), f = [sin(cam.yaw) * cp, sin(cam.pitch), cos(cam.yaw) * cp], eye = [cam.x, cam.y, cam.z];
-    const proj = perspLH(1.012, W / H_, 0.12), vp = mul4(proj, viewLH(eye, [eye[0] + f[0], eye[1] + f[1], eye[2] + f[2]]));
+    const asp = W / H_, proj = perspLH(asp < 1 ? 2 * Math.atan(Math.tan(0.506) / sqrt(asp)) : 1.012, asp, 0.12), vp = mul4(proj, viewLH(eye, [eye[0] + f[0], eye[1] + f[1], eye[2] + f[2]]));
     const mvp = mul4(vp, MIRROR_Y);
     writeU(uniforms.main, vp, eye, 0, sceneTime);
     writeU(uniforms.refl, mvp, [eye[0], -eye[1], eye[2]], 1, sceneTime);
@@ -360,6 +371,7 @@ async function boot() {
   const openMenu = () => { playing = false; body.className = 'm'; if (document.pointerLockElement) document.exitPointerLock(); };
   $('d').onclick = () => {
     playing = true; body.className = 'g'; startAudio();
+    if (mob) { tourActive = true; lookOff.yaw = lookOff.pitch = 0; }
     if (!mob) { try { const r = canvas.requestPointerLock?.(); r?.catch?.(() => {}); } catch {} }
   };
   $('o').onclick = openMenu;
