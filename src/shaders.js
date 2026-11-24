@@ -51,6 +51,12 @@ fn shadow(p:vec3f, n:vec3f, bias:f32)->f32 {
   return (textureSampleCompareLevel(shT, shS, uv + vec2f(-t, -.4 * t), z) + textureSampleCompareLevel(shT, shS, uv + vec2f(t, .4 * t), z)
     + textureSampleCompareLevel(shT, shS, uv + vec2f(-.4 * t, t), z) + textureSampleCompareLevel(shT, shS, uv + vec2f(.4 * t, -t), z)) * .25;
 }
+// wide 4-tap kernel (~25 cm) so thin card shadows fall on the flower clouds as soft dapples, not streaks
+fn softShadow(p:vec3f)->f32 {
+  let q = u.svp * vec4f(p, 1.); let uv = q.xy * vec2f(.5, -.5) + .5; let t = 3.5 / f32(textureDimensions(shT).x); let z = q.z - .0006;
+  return (textureSampleCompareLevel(shT, shS, uv + vec2f(-t, -.4 * t), z) + textureSampleCompareLevel(shT, shS, uv + vec2f(t, .4 * t), z)
+    + textureSampleCompareLevel(shT, shS, uv + vec2f(-.4 * t, t), z) + textureSampleCompareLevel(shT, shS, uv + vec2f(.4 * t, -t), z)) * .25;
+}
 fn shadow1(p:vec3f, n:vec3f, bias:f32)->f32 {
   let q = u.svp * vec4f(p + n * bias, 1.);
   return textureSampleCompareLevel(shT, shS, q.xy * vec2f(.5, -.5) + .5, q.z - .00035);
@@ -293,13 +299,17 @@ const Q = array<vec2f,6>(vec2f(-1,-1), vec2f(1,-1), vec2f(1,1), vec2f(-1,-1), ve
   if (cov < .02) { discard; }
   var n = normalize(v.n); if (!ff) { n = -n; }
   let rd = normalize(v.p - u.cam.xyz); let l = u.sun.xyz;
-  let sh = shadow1(v.p, normalize(v.n), .34);
+  // camera-facing sprays cast their shadow at their stored angle, so they look it up from a step toward the sun
+  var sh = 0.;
+  if (v.cell.x > .5 && v.cell.y < .5) { sh = mix(.3, 1., softShadow(v.p + u.sun.xyz * .55)); } else { sh = shadow1(v.p, normalize(v.n), .34); }
   let g = giAt(v.p + vec3f(0., .95, 0.));
   var alb = v.col * (.46 + tx.r * .72);
   let wrap = sat((dot(n, l) + .45) / 1.45);
   var col:vec3f;
   if (v.cell.y < .5) {
-    alb = mix(v.col, v.col * vec3f(.9, .5, .64), tx.b * .8) * (.84 + (tx.r - .7) * .42);
+    let pale = mix(v.col, vec3f(1.), .26);
+    alb = mix(pale, v.col * vec3f(.88, .4, .55), tx.b) * (.6 + .42 * tx.r);
+    alb = mix(alb, vec3f(.9, .74, .42), tx.g * .85);
     let vis = sat(g.r);
     let multi = vis / max(vec3f(1.) - alb * (1. - vis), vec3f(.08));
     let shade = mix(vec3f(.3, .25, .31), vec3f(.62, .66, .74), n.y * .5 + .5);
@@ -307,7 +317,7 @@ const Q = array<vec2f,6>(vec2f(-1,-1), vec2f(1,-1), vec2f(1,1), vec2f(-1,-1), ve
     let through = pow(sat(dot(rd, l)), 2.5) * 1.25 + sat(dot(-n, l)) * .5;
     let ao = mix(.38, 1., v.ao);
     col = alb * (key * wrap * sh * .36 * mix(.55, 1., v.ao) + shade * (.42 + 1.25 * multi) * ao + vec3f(.46, .4, .34) * g.g * .55 * ao);
-    col += pow(alb, vec3f(1.7)) * key * through * sh * .3 * mix(.6, 1., v.ao);
+    col += pow(alb, vec3f(1.5)) * key * through * sh * .36 * mix(.6, 1., v.ao) * (1. - tx.g * .7);
   } else {
     let back = pow(sat(dot(rd, l)), 3.) * 1.8 + sat(dot(-n, l)) * .62 + .16;
     let trans = (v.col * .85 + vec3f(.05, .03, .01)) * (.55 + tx.g * .45);
@@ -460,14 +470,18 @@ fn hs(x:f32, s:f32)->f32 { return fract(sin(x * 91.17 + s * 37.3) * 43758.5453);
   var c = vec3f(cos(a) * rad, 0., sin(a) * rad);
   var size = .05; var col = vec4f(0.);
   if (kind < 3u) {
-    let rate = .28 + hs(f, 3.) * .24; let H = 15.;
-    c.y = H - fract(t * rate / H + hs(f, 4.)) * H;
-    c.x += sin(t * .42 + f) * 1.15 + c.y * .22; c.z += cos(t * .35 + f * 1.3) * 1.15;
-    size = .021 + hs(f, 5.) * .024;
-    let pink = vec3f(.95, .53, .65);
-    let base = pink * (.72 + .28 * abs(sin(t * (1. + hs(f, 6.)) + f)));
-    let lit = .62 + 1.1 * sat(dot(normalize(vec3f(.0, 1., 0.)), u.sun.xyz));
-    col = vec4f(base * lit, 1.);
+    let rate = .32 + hs(f, 3.) * .26; let H = 13.; let B = 36.;
+    c.y = H - fract(t * rate / H + hs(f, 4.)) * H + .05;
+    let sx = sin(t * (1.2 + hs(f, 10.)) + f * 3.) * .35;
+    let ox = (hs(f, 1.) - .5) * B + t * .45 + c.y * .2 + sin(t * .42 + f) * 1.1 + sx;
+    let oz = (hs(f, 2.) - .5) * B + cos(t * .35 + f * 1.3) * 1.1 + sx * .6;
+    c.x = u.cam.x + (fract((ox - u.cam.x) / B + .5) - .5) * B;
+    c.z = u.cam.z + (fract((oz - u.cam.z) / B + .5) - .5) * B;
+    size = .022 + hs(f, 5.) * .014;
+    let flip = cos(t * (2. + hs(f, 6.) * 3.) + f * 7.);
+    let back = pow(sat(dot(normalize(c - u.cam.xyz), u.sun.xyz)), 3.);
+    let lit = .55 + .45 * abs(flip) + back * 1.6;
+    col = vec4f(vec3f(.98, .78, .84) * lit, 1. + flip * .5);
   } else if (kind == 3u) {
     c.y = .45 + hs(f, 3.) * 3.4 + sin(t * .55 + f) * .42;
     c.x += sin(t * .33 + f * 2.) * 1.2; c.z += cos(t * .29 + f) * 1.2;
@@ -483,7 +497,9 @@ fn hs(x:f32, s:f32)->f32 { return fract(sin(x * 91.17 + s * 37.3) * 43758.5453);
     col = vec4f(vec3f(7.2, 4.8, 1.8) * (.28 + 1.5 * pow(.5 + .5 * sin(t * 2.3 + f * 3.), 4.)), 0.);
   }
   let rot = t * (hs(f, 9.) - .5) * 2.4 + f;
-  let rq = vec2f(q.x * cos(rot) - q.y * sin(rot), q.x * sin(rot) + q.y * cos(rot));
+  var qq = q;
+  if (kind < 3u) { qq.x *= .12 + .88 * abs(cos(t * (2. + hs(f, 6.) * 3.) + f * 7.)); }
+  let rq = vec2f(qq.x * cos(rot) - qq.y * sin(rot), qq.x * sin(rot) + qq.y * cos(rot));
   var w = u.vp * vec4f(c, 1.);
   size *= smoothstep(.9, 4.2, w.w);
   w = vec4f(w.xy + rq * size * u.res.y / u.res.x * vec2f(1., u.res.x / u.res.y) * 1.8, w.z, w.w);
@@ -492,9 +508,15 @@ fn hs(x:f32, s:f32)->f32 { return fract(sin(x * 91.17 + s * 37.3) * 43758.5453);
 @fragment fn fs(v:SO)->@location(0) vec4f {
   if (u.misc.x > .5 && v.y < 0.) { discard; }
   let r = length(v.q);
-  if (v.col.a > .5) {
-    let a = (1. - smoothstep(.72, 1., length(v.q * vec2f(1.65, 1.))));
-    return vec4f(v.col.rgb * a, a);
+  if (v.col.a > .4) {
+    // notched petal: narrow at the base, pink heart, paler blade
+    let y = v.q.y * .5 + .5;
+    let hw = .58 * pow(sat(y), .5) * sqrt(max(1. - pow(sat(y), 5.), 0.)) + .05;
+    var d = min(hw - abs(v.q.x), (y - .84) * -1.2 + abs(v.q.x) * 1.15);
+    let a = smoothstep(-.06, .06, d);
+    if (a < .01) { discard; }
+    let c = mix(v.col.rgb * vec3f(.95, .72, .8), v.col.rgb, smoothstep(.0, .5, y)) * mix(.8, 1., v.col.a - .5);
+    return vec4f(c * a, a);
   }
   let g = pow(sat(1. - r), 2.6);
   return vec4f(v.col.rgb * g, 0.);
@@ -622,27 +644,63 @@ fn cluster(q:vec2f, kind:i32)->vec2f {
   }
   return vec2f(best, shade);
 }
-// one fallen petal: egg-shaped, widening to a notched tip
-fn petal(q:vec2f)->vec2f {
-  let p = rot(q, .5) * vec2f(1.3, 1.05);
-  var d = .88 - length(vec2f(p.x * (1.2 - p.y * .3), p.y));
-  d = min(d, -((p.y - .6) - abs(p.x) * 1.5) * .6);
-  return vec2f(d, .82 + p.y * .12 - (1. - smoothstep(0., .05, abs(p.x))) * .08);
+// one petal: narrow claw at the base, broad rounded blade, V notch at the tip; x: sdf, y: shade, z: pink
+fn petalShape(p:vec2f)->vec3f {
+  let y = p.y * .5 + .5;
+  let hw = .62 * pow(sat3(y), .5) * sqrt(max(1. - pow(sat3(y), 5.), 0.)) + .04;
+  var d = min(hw - abs(p.x), min(p.y + 1., 1. - p.y));
+  d = min(d, (y - .84) * -1.2 + abs(p.x) * 1.15);
+  let vein = .05 * sin(p.x / max(hw, .05) * 9.) * smoothstep(.2, .7, y);
+  return vec3f(d * .5, .8 + y * .12 + vein - (1. - smoothstep(0., .05, abs(p.x))) * .05, (1. - smoothstep(.0, .45, y)) * .7);
 }
-fn blossoms(q:vec2f)->vec3f {
-  var best = -9.; var shade = .5; var cen = 0.;
-  for (var i = 0; i < 30; i++) {
-    let fi = f32(i); let g = 2.399 * fi; let rad = sqrt((fi + .5) / 30.) * .7;
-    let c = vec2f(cos(g), sin(g)) * rad + (vec2f(hh(fi), hh(fi + 7.)) - .5) * .14;
-    let bud = hh(fi + 21.) < .12;
-    let sc = select(.19 * (.8 + hh(fi + 3.) * .4), .07, bud);
-    let pl = rot(q - c, g + hh(fi + 11.) * 2.) / sc;
-    var res:vec3f;
-    if (bud) { res = vec3f(1. - length(pl * vec2f(1., .75)), .78, .85); } else { res = sakura(pl); }
-    let d = res.x * sc;
-    if (d > -.012 && (d > best || best < 0.)) { best = max(best, d); shade = res.y * (.74 + hh(fi + 5.) * .36) * (.86 + .14 * (1. - rad)); cen = res.z; }
+fn petal(q:vec2f)->vec4f { let r = petalShape(rot(q, .5) * vec2f(1.15, 1.05)); return vec4f(r.x, r.y, r.z, 0.); }
+// one open flower; x: sdf, y: shade, z: pink (heart, calyx), w: stamen
+fn flower(p:vec2f, sd:f32)->vec4f {
+  let a = atan2(p.x, p.y) + sd; let r = length(p);
+  let k = a * 5. / 6.2831853; let s = (k - floor(k + .5)) * 2.;
+  let R = .36 + .64 * pow(max(1. - s * s, 0.), .42) - .2 * (1. - smoothstep(0., .17, abs(s)));
+  let d = R - r;
+  // light radial veins, a cupped fall-off toward the heart and a crease where neighbouring petals meet
+  var shade = .86 + .05 * sin(s * 11.) * smoothstep(.2, .7, r) - .28 * smoothstep(.78, 1., abs(s)) * smoothstep(.25, .75, r) - (1. - smoothstep(.0, .35, r)) * .14;
+  var pink = (1. - smoothstep(.1, .45, r)) * .75 + (1. - smoothstep(.0, .1, r)) * .25;
+  var st = 0.;
+  // twenty stamens on fine filaments, anthers scattered between .2 and .32
+  for (var j = 0; j < 20; j++) {
+    let fj = f32(j); let aj = (fj + hh(fj * 3.7 + sd) * .6) * 6.2831853 / 20. - sd; let rj = .19 + hh(fj + sd * 5.) * .13;
+    let e = vec2f(sin(aj), cos(aj)) * rj;
+    let h = clamp(dot(p, e) / dot(e, e), 0., 1.);
+    if (length(p - e * h) < .007 * (1. - h * .3)) { shade = max(shade, .95); pink = pink * .4; }
+    st = max(st, 1. - smoothstep(.022, .034, length(p - e)));
   }
-  return vec3f(best, shade, cen);
+  return vec4f(d, shade * (1. - st * .25), mix(pink, .15, st), st);
+}
+// a spur of 3-4 flowers on pedicels, flowers turned at different angles so some are seen obliquely
+fn blossoms(q:vec2f)->vec4f {
+  var cov = -9.; var top = vec4f(-9., .5, 0., 0.);
+  for (var g = 0; g < 7; g++) {
+    let fg = f32(g); let ga = 2.399 * fg; let gr = sqrt((fg + .5) / 7.) * .56;
+    let gc = vec2f(cos(ga), sin(ga)) * gr + (vec2f(hh(fg + 40.), hh(fg + 47.)) - .5) * .1;
+    let n = 3 + i32(hh(fg + 13.) * 2.);
+    for (var i = 0; i < n; i++) {
+      let fi = f32(i) + fg * 5.; let fa = hh(fi + 2.) * 6.2831853;
+      let c = gc + vec2f(cos(fa), sin(fa)) * (.13 + hh(fi + 9.) * .1);
+      // pedicel from the spur to the flower
+      let pe = c - gc; let h = clamp(dot(q - gc, pe) / max(dot(pe, pe), 1e-4), 0., 1.);
+      let pd = .008 - length(q - gc - pe * h);
+      if (pd > cov) { cov = max(cov, pd); }
+      if (pd > 0. && top.x < 0.) { top = vec4f(pd, .2, .55, 0.); }
+      let bud = hh(fi + 21.) < .1;
+      let sc = select(.18 * (.82 + hh(fi + 3.) * .36), .065, bud);
+      let ta = hh(fi + 31.) * 3.14159; let tilt = mix(.5, 1., hh(fi + 37.));
+      var pl = rot(q - c, ta) / sc; pl.y = pl.y / tilt; pl = rot(pl, -ta);
+      var res:vec4f;
+      if (bud) { res = vec4f(1. - length(pl * vec2f(1., .7)), .7, .85, 0.); } else { res = flower(pl, hh(fi + 11.) * 6.28); }
+      let d = res.x * sc * tilt;
+      cov = max(cov, d);
+      if (d > 0.) { top = vec4f(d, res.y, res.z, res.w); }
+    }
+  }
+  return vec4f(cov, top.y, top.z, top.w);
 }
 fn fern(q:vec2f)->vec2f {
   let y = q.y * .5 + .5;
@@ -661,11 +719,11 @@ fn sat3(x:f32)->f32 { return clamp(x, 0., 1.); }
 @fragment fn fs(v:FV)->@location(0) vec4f {
   let cf = floor(v.uv * 2.); let q = (fract(v.uv * 2.) * 2. - 1.) * 1.04; let k = i32(cf.x) + i32(cf.y) * 2;
   var r:vec2f;
-  var cen = .8;
-  if (k == 2) { r = fern(q); } else if (k == 1) { let b = blossoms(q); r = b.xy; cen = b.z; } else if (k == 0) { r = petal(q); cen = .3 * (1. - smoothstep(-.9, -.4, q.y)); } else { r = cluster(q, 2); }
+  var cen = .8; var g2 = -1.;
+  if (k == 2) { r = fern(q); } else if (k == 1) { let b = blossoms(q); r = b.xy; cen = b.z; g2 = b.w; } else if (k == 0) { let b = petal(q); r = b.xy; cen = b.z; g2 = 0.; } else { r = cluster(q, 2); }
   let sc = 1024.;
   let a = sat3(r.x * sc * .32 + .5);
-  return vec4f(sat3(r.y), sat3(r.y * 1.1), cen, a);
+  return vec4f(sat3(r.y), select(sat3(r.y * 1.1), g2, g2 >= 0.), cen, a);
 }
 `;
 
