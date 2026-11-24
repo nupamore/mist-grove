@@ -1,0 +1,15 @@
+{
+  "name": "mist-grove",
+  "private": true,
+  "description": "An ancient misty giant-tree sanctuary and mirror lake rendered procedurally with WebGPU",
+  "type": "module",
+  "scripts": {
+    "build": "node build.mjs",
+    "build:readable": "node build.mjs --readable",
+    "build:dev": "node build.mjs --dev",
+    "capture": "node capture.mjs"
+  },
+  "devDependencies": {
+    "esbuild": "^0.25.0"
+  }
+}
